@@ -1,0 +1,12 @@
+version: '3'
+
+services:
+  consul:
+    image: consul:1.2.2
+    network_mode: host
+
+  api-gateway:
+    build: .
+    image: corefinance/gateway:v1
+    restart: on-failure
+    network_mode: host

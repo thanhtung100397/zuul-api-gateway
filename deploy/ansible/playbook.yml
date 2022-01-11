@@ -1,0 +1,74 @@
+- hosts: server
+  vars:
+    app_env:    "{{lookup('env', 'CI_ENVIRONMENT_NAME') | default('dev', true)}}"
+    env_suffix: "{{('_' + app_env        ) if app_env != 'prod' else ''}}"
+    ENV_SUFFIX: "{{('_' + app_env | upper) if app_env != 'prod' else ''}}"
+
+    app_name: "{{lookup('env', 'CI_PROJECT_NAME')}}"
+    app_repo: "{{lookup('env', 'CI_REPOSITORY_URL')}}"
+    app_rev:  "{{lookup('env', 'CI_COMMIT_SHA') | default('HEAD', true)}}"
+    app_root: "{{ansible_env.HOME}}/{{app_name + env_suffix}}"
+    app_url:  "{{lookup('env', 'CI_ENVIRONMENT_URL') | urlsplit('hostname')}}"
+  tasks:
+  - name: Install packages
+    become: yes
+    apt:
+      update_cache: yes
+      name: "{{packages}}"
+    vars:
+      packages:
+      - openjdk-8-jre
+      - supervisor
+    notify:
+    - restart_app
+
+  - name: Create App root
+    file:
+      path:  "{{item}}"
+      state: directory
+    with_items:
+    - "{{app_root}}"
+    - "{{app_root}}/var/run"
+    - "{{app_root}}/var/log"
+    notify:
+    - restart_app
+
+  - name: Copy artifacts
+    copy:
+      src:  ../../build/libs/apigateway-0.0.1-SNAPSHOT.jar
+      dest: "{{app_root}}"
+    notify:
+    - restart_app
+
+  - name: Copy config
+    copy:
+      content: "{{lookup('env', 'CONFIGS' + ENV_SUFFIX)}}"
+      dest: "{{app_root}}/config.yml"
+    notify:
+    - restart_app
+
+  - name: Config supervisor program
+    become: yes
+    template:
+      src:   templates/api-gateway-poc.ini
+      dest:  /etc/supervisor/conf.d/api-gateway-poc.conf
+      force: yes
+    notify:
+    - restart_app
+    notify:
+    - restart_app
+
+  - name: Start supervisor
+    become: yes
+    service:
+      name:  supervisor
+      state: started
+    
+  handlers:
+  - name: restart supervisor processes
+    become: yes
+    supervisorctl:
+      name:   api-gateway-poc
+      state:  restarted
+    listen:
+    - restart_app

@@ -1,0 +1,41 @@
+stages:
+- test
+- build
+- deploy
+
+build:gradle:
+  stage: build
+  image: gradle:4.10-jdk8-alpine
+  cache:
+    key: gradle-cache
+    paths: [ .gradle-cache ]
+  variables:
+    GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+    GRADLE_USER_HOME: "${CI_PROJECT_DIR}/.gradle-cache"
+  script:
+  - gradle build
+  artifacts:
+    paths:
+    - build/libs/apigateway-*.jar
+    expire_in: 1 week
+  tags:
+  - on-premises
+
+.deploy: &deploy
+  stage: deploy
+  image: dungdm93/ansible:ubuntu16.04
+  script:
+  - ansible-playbook deploy/ansible/playbook.yml -i deploy/ansible/inventory.ini -l $CI_ENVIRONMENT_NAME
+
+
+deploy:develop:
+  <<: *deploy
+  before_script:
+  - eval $(ssh-agent -s)
+  - ssh-add <(echo "$SSH_PRIVATE_KEY")
+  environment:
+    name: dev
+  tags:
+  - on-premises
+  only:
+  - dev
